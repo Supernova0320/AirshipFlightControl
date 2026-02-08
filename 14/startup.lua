@@ -8,7 +8,7 @@ local AUTO_CHANNEL = 301
 modem.open(AUTO_CHANNEL)
 
 local sensor = nil
-local target = nil
+local target      = nil
 
 local navState = "NAV_IDLE"
 local steering = "stable"
@@ -49,7 +49,19 @@ local function headingVector()
     return nil
 end
 
+local function alignmentDot(targetVec, heading)
+    local hx, hz, hl = normalize(heading.x, heading.z)
+    local tx, tz, tl = normalize(targetVec.x, targetVec.z)
+    if hl == 0 or tl == 0 then return true end
+    return hx * tx + hz * tz
+end
+
 local function steeringDecision(targetVec, heading)
+    local dot = alignmentDot(targetVec, heading)
+    if dot == true or dot >= ALIGN_DOT then
+        return "stable"
+    end
+
     local cross = heading.x * targetVec.z - heading.z * targetVec.x
     if math.abs(cross) < 0.1 then
         return "stable"
@@ -58,10 +70,8 @@ local function steeringDecision(targetVec, heading)
 end
 
 local function isAligned(targetVec, heading)
-    local hx, hz, hl = normalize(heading.x, heading.z)
-    local tx, tz, tl = normalize(targetVec.x, targetVec.z)
-    if hl == 0 or tl == 0 then return true end
-    local dot = hx * tx + hz * tz
+    local dot = alignmentDot(targetVec, heading)
+    if dot == true then return true end
     return dot >= ALIGN_DOT
 end
 
@@ -117,13 +127,15 @@ local function processNavigation()
     end
 
     if navState == "NAV_TURNING" then
-        sendAutoCmd({ mode = navState, yaw = steering, engine = 0 })
-        if isAligned(targetVec, heading) then
+        local yaw = steering ~= "stable" and steering or "stable"
+        sendAutoCmd({ mode = navState, yaw = yaw, engine = 0 })
+        if steering == "stable" then
             navState = "NAV_CRUISING"
         end
 
     elseif navState == "NAV_CRUISING" then
-        sendAutoCmd({ mode = navState, yaw = steering, engine = CRUISE_ENGINE })
+        local yaw = steering ~= "stable" and steering or "stable"
+        sendAutoCmd({ mode = navState, yaw = yaw, engine = CRUISE_ENGINE })
         if distance and distance <= BRAKE_DIST then
             navState = "NAV_BRAKING"
         end

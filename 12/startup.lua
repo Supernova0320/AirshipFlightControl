@@ -213,11 +213,9 @@ local function drawUI()
     -- ---- STATE ----
     section("[ STATE ]")
 
-    stateLine(
-        "Mode:",
-        navState.active and navState.mode or "IDLE",
-        navState.active and colors.cyan or colors.gray
-    )
+    local modeLabel = navState.mode or "IDLE"
+    local modeColor = modeLabel ~= "NAV_IDLE" and colors.cyan or colors.gray
+    stateLine("Mode:", modeLabel, modeColor)
 
     local yawColor = {
         left   = colors.orange,
