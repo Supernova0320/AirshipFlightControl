@@ -3,7 +3,7 @@
 -- ================================
 
 local MODEM_PORT = 65520
-local ROLE = "front"   -- ★ 这一台是 front，另一台改成 "rear"
+local ROLE = "sensor"
 
 -- modem（可选）
 local modem = peripheral.find("modem")
@@ -41,6 +41,20 @@ end
 -- ================================
 
 local function collectShipState()
+    local quaternion = safe(ship.getQuaternion)
+    local heading = nil
+    if quaternion and quaternion.x and quaternion.y and quaternion.z and quaternion.w then
+        local x = quaternion.x
+        local y = quaternion.y
+        local z = quaternion.z
+        local w = quaternion.w
+        heading = {
+            x = 2 * (x * z + w * y),
+            y = 2 * (y * z - w * x),
+            z = 1 - 2 * (x * x + y * y)
+        }
+    end
+
     return {
         -- ★ 身份字段（关键）
         role = ROLE,
@@ -59,8 +73,9 @@ local function collectShipState()
         omega    = safe(ship.getAngularVelocity),
 
         -- 姿态
-        quaternion = safe(ship.getQuaternion),
+        quaternion = quaternion,
         transform  = safe(ship.getTransformationMatrix),
+        heading    = heading,
 
         -- 物理属性
         scale   = safe(ship.getScale),
@@ -101,6 +116,15 @@ while true do
             state.velocity.x,
             state.velocity.y,
             state.velocity.z
+        ))
+    end
+
+    if state.heading then
+        print(string.format(
+            "Heading: %.2f %.2f %.2f",
+            state.heading.x,
+            state.heading.y,
+            state.heading.z
         ))
     end
 
