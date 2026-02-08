@@ -8,7 +8,7 @@ local AUTO_CHANNEL = 301
 modem.open(AUTO_CHANNEL)
 
 local sensor = nil
-local target      = nil
+local target = nil
 
 local navState = "NAV_IDLE"
 local steering = "stable"

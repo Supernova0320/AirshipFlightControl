@@ -22,6 +22,10 @@ local target = nil
 local uiEngineLevel = nil
 local autoState = nil
 
+local target = nil
+local uiEngineLevel = nil
+local autoState = nil
+
 -- ---------- Execution State ----------
 local execState = {
     mode   = "IDLE",
