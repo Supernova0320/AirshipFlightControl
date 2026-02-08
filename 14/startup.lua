@@ -7,9 +7,8 @@ local modem = peripheral.find("modem") or error("No modem")
 local AUTO_CHANNEL = 301
 modem.open(AUTO_CHANNEL)
 
-local frontSensor = nil
-local rearSensor  = nil
-local target      = nil
+local sensor = nil
+local target = nil
 
 local navState = "NAV_IDLE"
 local steering = "stable"
@@ -39,15 +38,12 @@ local function clamp(value, minValue, maxValue)
 end
 
 local function headingVector()
-    if frontSensor and rearSensor and frontSensor.pos and rearSensor.pos then
-        return {
-            x = frontSensor.pos.x - rearSensor.pos.x,
-            z = frontSensor.pos.z - rearSensor.pos.z
-        }
+    if sensor and sensor.heading then
+        return { x = sensor.heading.x, z = sensor.heading.z }
     end
 
-    if frontSensor and frontSensor.vel then
-        return { x = frontSensor.vel.x, z = frontSensor.vel.z }
+    if sensor and sensor.vel then
+        return { x = sensor.vel.x, z = sensor.vel.z }
     end
 
     return nil
@@ -98,13 +94,13 @@ local function resetToIdle()
 end
 
 local function processNavigation()
-    if not target or not frontSensor or not frontSensor.pos then
+    if not target or not sensor or not sensor.pos then
         resetToIdle()
         return
     end
 
-    local dx = target.x - frontSensor.pos.x
-    local dz = target.z - frontSensor.pos.z
+    local dx = target.x - sensor.pos.x
+    local dz = target.z - sensor.pos.z
     distance = len2(dx, dz)
 
     local heading = headingVector()
@@ -134,9 +130,9 @@ local function processNavigation()
 
     elseif navState == "NAV_BRAKING" then
         local brake = nil
-        if frontSensor.vel then
-            local vx = frontSensor.vel.x
-            local vz = frontSensor.vel.z
+        if sensor.vel then
+            local vx = sensor.vel.x
+            local vz = sensor.vel.z
             local speed = len2(vx, vz)
             local dirX, dirZ = 0, 0
             if speed > 0 then
@@ -166,8 +162,7 @@ while true do
     if ch ~= AUTO_CHANNEL or type(msg) ~= "table" then goto continue end
 
     if msg.type == "sensor_update" then
-        frontSensor = msg.front or frontSensor
-        rearSensor = msg.rear or rearSensor
+        sensor = msg.sensor or sensor
         if msg.target ~= nil then
             target = msg.target
         end

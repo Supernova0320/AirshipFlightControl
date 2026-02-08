@@ -16,10 +16,11 @@ modem.open(UI_CHANNEL)
 modem.open(AUTO_CHANNEL)
 
 -- ---------- Sensor Cache ----------
-local sensors = {
-    front = nil,
-    rear  = nil
-}
+local sensor = nil
+
+local target = nil
+local uiEngineLevel = nil
+local autoState = nil
 
 local target = nil
 local uiEngineLevel = nil
@@ -66,7 +67,7 @@ local function applyBrake(brake)
     if not dir or not dir.x or not dir.z or power == 0 then return end
 
     local force = { x = dir.x * power, y = 0, z = dir.z * power }
-    local pos = sensors.front and sensors.front.pos or (ship.getWorldspacePosition and ship.getWorldspacePosition())
+    local pos = sensor and sensor.pos or (ship.getWorldspacePosition and ship.getWorldspacePosition())
 
     if pos and ship.applyWorldForce then
         pcall(function()
@@ -86,8 +87,8 @@ local function sendUIState()
             yaw    = execState.yaw,
             engine = execState.engine,
             brake  = execState.brake,
-            pos    = sensors.front and sensors.front.pos or nil,
-            vel    = sensors.front and sensors.front.vel or nil,
+            pos    = sensor and sensor.pos or nil,
+            vel    = sensor and sensor.vel or nil,
             target = target,
             auto   = autoState
         }
@@ -100,12 +101,10 @@ local function sendAutoSensorUpdate()
         AUTO_CHANNEL,
         {
             type  = "sensor_update",
-            front = sensors.front and {
-                pos = sensors.front.pos,
-                vel = sensors.front.vel
-            } or nil,
-            rear  = sensors.rear and {
-                pos = sensors.rear.pos
+            sensor = sensor and {
+                pos = sensor.pos,
+                vel = sensor.vel,
+                heading = sensor.heading
             } or nil,
             target = target
         }
@@ -134,10 +133,11 @@ while true do
     if type(msg) ~= "table" then goto continue end
 
     -- ===== Perception (Front / Rear Sensors) =====
-    if channel == PERCEPTION_CHANNEL and msg.role then
-        sensors[msg.role] = {
+    if channel == PERCEPTION_CHANNEL and msg.position then
+        sensor = {
             pos = msg.position,
             vel = msg.velocity,
+            heading = msg.heading,
             t   = msg.timestamp
         }
 
