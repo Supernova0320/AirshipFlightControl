@@ -9,7 +9,7 @@ local ship  = peripheral.find("ship")
 local PERCEPTION_CHANNEL = 65520
 local UI_CHANNEL         = 121
 local AUTO_CHANNEL       = 301
-local ENGINE_CHANNEL     = 15   -- 预留
+local ENGINE_CHANNEL     = 15
 
 modem.open(PERCEPTION_CHANNEL)
 modem.open(UI_CHANNEL)
@@ -21,12 +21,16 @@ local sensors = {
     rear  = nil
 }
 
+local target = nil
+local uiEngineLevel = nil
+local autoState = nil
+
 -- ---------- Execution State ----------
 local execState = {
     mode   = "IDLE",
     yaw    = "stable",
     engine = 0,
-    brake  = { dir = 0, power = 0 }
+    brake  = nil
 }
 
 -- ---------- Actuators ----------
@@ -46,12 +50,29 @@ end
 
 local function setEngine(level)
     execState.engine = level
-    -- 预留
+    modem.transmit(
+        ENGINE_CHANNEL,
+        ENGINE_CHANNEL,
+        { type = "main_engine_throttle", level = level }
+    )
 end
 
 local function applyBrake(brake)
     execState.brake = brake
-    -- 这里只记录，具体实现之后接
+    if not brake or not ship then return end
+
+    local dir = brake.dir or { x = brake.x, z = brake.z }
+    local power = brake.power or 0
+    if not dir or not dir.x or not dir.z or power == 0 then return end
+
+    local force = { x = dir.x * power, y = 0, z = dir.z * power }
+    local pos = sensors.front and sensors.front.pos or (ship.getWorldspacePosition and ship.getWorldspacePosition())
+
+    if pos and ship.applyWorldForce then
+        pcall(function()
+            ship.applyWorldForce(force, pos)
+        end)
+    end
 end
 
 -- ---------- UI Feedback ----------
@@ -65,7 +86,39 @@ local function sendUIState()
             yaw    = execState.yaw,
             engine = execState.engine,
             brake  = execState.brake,
-            pos    = sensors.front and sensors.front.pos or nil
+            pos    = sensors.front and sensors.front.pos or nil,
+            vel    = sensors.front and sensors.front.vel or nil,
+            target = target,
+            auto   = autoState
+        }
+    )
+end
+
+local function sendAutoSensorUpdate()
+    modem.transmit(
+        AUTO_CHANNEL,
+        AUTO_CHANNEL,
+        {
+            type  = "sensor_update",
+            front = sensors.front and {
+                pos = sensors.front.pos,
+                vel = sensors.front.vel
+            } or nil,
+            rear  = sensors.rear and {
+                pos = sensors.rear.pos
+            } or nil,
+            target = target
+        }
+    )
+end
+
+local function sendAutoTarget()
+    modem.transmit(
+        AUTO_CHANNEL,
+        AUTO_CHANNEL,
+        {
+            type = "nav_target",
+            target = target
         }
     )
 end
@@ -77,7 +130,7 @@ print("=================================")
 
 -- ---------- Main Loop ----------
 while true do
-    local _, _, channel, _, msg, senderId = os.pullEvent("modem_message")
+    local _, _, channel, _, msg = os.pullEvent("modem_message")
     if type(msg) ~= "table" then goto continue end
 
     -- ===== Perception (Front / Rear Sensors) =====
@@ -88,36 +141,39 @@ while true do
             t   = msg.timestamp
         }
 
-        -- 传感器数据转发给自动驾驶
-        modem.transmit(
-            AUTO_CHANNEL,
-            AUTO_CHANNEL,
-            {
-                type  = "sensor_update",
-                front = sensors.front and {
-                    pos = sensors.front.pos,
-                    vel = sensors.front.vel
-                } or nil,
-                rear  = sensors.rear and {
-                    pos = sensors.rear.pos
-                } or nil
-            }
-        )
-
+        sendAutoSensorUpdate()
         sendUIState()
 
     -- ===== UI Command =====
     elseif channel == UI_CHANNEL and msg.type == "ui_cmd" then
-        -- UI 命令直接转交自动驾驶
-        modem.transmit(AUTO_CHANNEL, AUTO_CHANNEL, msg)
+        if msg.throttle ~= nil then
+            uiEngineLevel = msg.throttle
+            setEngine(uiEngineLevel)
+        end
+
+        if msg.target then
+            target = msg.target
+            sendAutoTarget()
+        elseif msg.clear_target then
+            target = nil
+            sendAutoTarget()
+        end
+
+        sendUIState()
 
     -- ===== AUTO Command =====
     elseif channel == AUTO_CHANNEL and msg.type == "auto_cmd" then
         if msg.mode   then execState.mode = msg.mode end
         if msg.yaw    then setYaw(msg.yaw) end
-        if msg.engine then setEngine(msg.engine) end
+        if msg.engine and uiEngineLevel == nil then setEngine(msg.engine) end
         if msg.brake  then applyBrake(msg.brake) end
 
+        sendUIState()
+
+    -- ===== AUTO State =====
+    elseif channel == AUTO_CHANNEL and msg.type == "auto_state" then
+        autoState = msg
+        if msg.nav_state then execState.mode = msg.nav_state end
         sendUIState()
     end
 
