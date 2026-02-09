@@ -171,6 +171,7 @@ local BRAKE_DIST    = 500
 local STOP_DIST     = 5
 local STOP_SPEED    = 0.5
 local ALIGN_DOT     = 0.95
+local TURN_DOT      = 0.98
 
 -- ---------- Math ----------
 local function len2(x, z)
@@ -210,14 +211,11 @@ end
 
 local function steeringDecision(targetVec, heading)
     local dot = alignmentDot(targetVec, heading)
-    if dot == true or dot >= ALIGN_DOT then
+    if dot == true or dot >= TURN_DOT then
         return "stable"
     end
 
     local cross = heading.x * targetVec.z - heading.z * targetVec.x
-    if math.abs(cross) < 0.1 then
-        return "stable"
-    end
     return cross > 0 and "left" or "right"
 end
 

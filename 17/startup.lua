@@ -37,6 +37,27 @@ local function safe(fn)
     return nil
 end
 
+local function rotateVector(q, v)
+    local x = q.x
+    local y = q.y
+    local z = q.z
+    local w = q.w
+
+    local uvx = y * v.z - z * v.y
+    local uvy = z * v.x - x * v.z
+    local uvz = x * v.y - y * v.x
+
+    local uuvx = y * uvz - z * uvy
+    local uuvy = z * uvx - x * uvz
+    local uuvz = x * uvy - y * uvx
+
+    return {
+        x = v.x + 2 * (w * uvx + uuvx),
+        y = v.y + 2 * (w * uvy + uuvy),
+        z = v.z + 2 * (w * uvz + uuvz)
+    }
+end
+
 -- ================================
 -- 船头方向解算（核心校准逻辑）
 -- 船体局部坐标中：+X 为船头
@@ -73,7 +94,17 @@ end
 -- ================================
 
 local function collectShipState()
-    local heading = getCalibratedHeading()
+    local quaternion = safe(ship.getQuaternion)
+    local heading = nil
+    if quaternion and quaternion.x and quaternion.y and quaternion.z and quaternion.w then
+        local forward = { x = -1, y = 0, z = 0 }
+        local rotated = rotateVector(quaternion, forward)
+        heading = {
+            x = rotated.x,
+            y = rotated.y,
+            z = rotated.z
+        }
+    end
 
     return {
         -- ★ 身份字段（关键）
@@ -91,8 +122,10 @@ local function collectShipState()
         velocity = safe(ship.getVelocity),
         omega    = safe(ship.getAngularVelocity),
 
-        -- 姿态（已校准船头）
-        heading  = heading,
+        -- 姿态
+        quaternion = quaternion,
+        transform  = safe(ship.getTransformationMatrix),
+        heading    = heading,
 
         -- 其他（保留）
         transform  = safe(ship.getTransformationMatrix),
@@ -139,13 +172,11 @@ while true do
 
     if state.heading then
         print(string.format(
-            "Heading(FWD): %.3f %.3f %.3f",
+            "Heading: %.2f %.2f %.2f",
             state.heading.x,
             state.heading.y,
             state.heading.z
         ))
-    else
-        print("Heading: N/A")
     end
 
     sleep(0)
