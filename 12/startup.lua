@@ -13,9 +13,8 @@ monitor.setBackgroundColor(colors.black)
 monitor.clear()
 
 -- ---------- Channels ----------
-local ENGINE_CHANNEL = 15
-local NAV_CHANNEL    = 121
-modem.open(NAV_CHANNEL)
+local MAIN_CHANNEL = 121
+modem.open(MAIN_CHANNEL)
 
 -- ---------- Layout ----------
 local LEFT_RATIO = 0.5
@@ -54,7 +53,9 @@ local navState = {
     x = nil,
     z = nil,
     steering = "stable",
-    active = false
+    active = false,
+    mode = "IDLE",
+    distance = nil
 }
 
 -- ---------- Utils ----------
@@ -89,6 +90,7 @@ local function block(x, y, w, h, bg, fg, text)
 end
 
 local function distance()
+    if navState.distance then return navState.distance end
     if not currentTarget.x or not navState.x then return nil end
     local dx = currentTarget.x - navState.x
     local dz = currentTarget.z - navState.z
@@ -96,20 +98,21 @@ local function distance()
 end
 
 -- ---------- Messaging ----------
+local function sendUICommand(payload)
+    payload.type = "ui_cmd"
+    modem.transmit(MAIN_CHANNEL, MAIN_CHANNEL, payload)
+end
+
 local function sendThrottle(level)
-    modem.transmit(
-        ENGINE_CHANNEL,
-        ENGINE_CHANNEL,
-        { type = "main_engine_throttle", level = level }
-    )
+    sendUICommand({ throttle = level })
 end
 
 local function sendTarget(x, z)
-    modem.transmit(
-        NAV_CHANNEL,
-        NAV_CHANNEL,
-        { type = "target", x = x, z = z }
-    )
+    sendUICommand({ target = { x = x, z = z } })
+end
+
+local function clearTarget()
+    sendUICommand({ clear_target = true })
 end
 
 -- ---------- UI ----------
@@ -210,11 +213,9 @@ local function drawUI()
     -- ---- STATE ----
     section("[ STATE ]")
 
-    stateLine(
-        "Mode:",
-        navState.active and "ACTIVE" or "IDLE",
-        navState.active and colors.cyan or colors.gray
-    )
+    local modeLabel = navState.mode or "IDLE"
+    local modeColor = modeLabel ~= "NAV_IDLE" and colors.cyan or colors.gray
+    stateLine("Mode:", modeLabel, modeColor)
 
     local yawColor = {
         left   = colors.orange,
@@ -244,12 +245,31 @@ end
 local function navListener()
     while true do
         local _, _, _, _, msg = os.pullEvent("modem_message")
-        if type(msg) == "table" and msg.type == "nav_state" then
-            navState.x = msg.x
-            navState.z = msg.z
-            if msg.steering then
-                navState.steering = string.lower(msg.steering)
+        if type(msg) == "table" and msg.type == "exec_state" then
+            if msg.engine ~= nil then
+                currentLevel = msg.engine
             end
+
+            if msg.pos then
+                navState.x = msg.pos.x
+                navState.z = msg.pos.z
+            end
+
+            if msg.target then
+                currentTarget.x = msg.target.x
+                currentTarget.z = msg.target.z
+            end
+
+            if msg.auto then
+                navState.steering = msg.auto.steering or navState.steering
+                navState.mode = msg.auto.nav_state or navState.mode
+                navState.distance = msg.auto.distance
+                if msg.auto.target then
+                    currentTarget.x = msg.auto.target.x
+                    currentTarget.z = msg.auto.target.z
+                end
+            end
+
             navState.active = currentTarget.x ~= nil and navState.x ~= nil
             drawUI()
         end
@@ -276,7 +296,8 @@ local function consoleLoop()
             currentTarget.x = nil
             currentTarget.z = nil
             navState.active = false
-            sendTarget(nil, nil)
+            navState.distance = nil
+            clearTarget()
             drawUI()
         end
     end
