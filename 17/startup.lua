@@ -1,5 +1,6 @@
 -- ================================
---  CC:VS Perception Layer
+--  CC:VS Perception Layer (CALIBRATED)
+--  Ship Forward = +X in Shipyard Space
 -- ================================
 
 local MODEM_PORT = 65520
@@ -37,28 +38,46 @@ local function safe(fn)
 end
 
 -- ================================
+-- 船头方向解算（核心校准逻辑）
+-- 船体局部坐标中：+X 为船头
+-- ================================
+
+local function getCalibratedHeading()
+    if not ship.transformPositionToWorld then
+        return nil
+    end
+
+    -- 船体局部原点
+    local w0 = safe(function()
+        return ship.transformPositionToWorld(0, 0, 0)
+    end)
+
+    -- 船体局部 +X 方向（船头）
+    local wF = safe(function()
+        return ship.transformPositionToWorld(1, 0, 0)
+    end)
+
+    if not w0 or not wF then
+        return nil
+    end
+
+    return {
+        x = wF.x - w0.x,
+        y = wF.y - w0.y,
+        z = wF.z - w0.z
+    }
+end
+
+-- ================================
 -- 感知数据采集
 -- ================================
 
 local function collectShipState()
-    local quaternion = safe(ship.getQuaternion)
-    local heading = nil
-    if quaternion and quaternion.x and quaternion.y and quaternion.z and quaternion.w then
-        local x = quaternion.x
-        local y = quaternion.y
-        local z = quaternion.z
-        local w = quaternion.w
-        heading = {
-            x = 2 * (x * z + w * y),
-            y = 2 * (y * z - w * x),
-            z = 1 - 2 * (x * x + y * y)
-        }
-    end
+    local heading = getCalibratedHeading()
 
     return {
         -- ★ 身份字段（关键）
         role = ROLE,
-
         timestamp = os.clock(),
 
         -- 基本信息
@@ -67,19 +86,18 @@ local function collectShipState()
         mass     = safe(ship.getMass),
         isStatic = safe(ship.isStatic),
 
-        -- 位置与速度
+        -- 位置与速度（世界坐标）
         position = safe(ship.getWorldspacePosition),
         velocity = safe(ship.getVelocity),
         omega    = safe(ship.getAngularVelocity),
 
-        -- 姿态
-        quaternion = quaternion,
-        transform  = safe(ship.getTransformationMatrix),
-        heading    = heading,
+        -- 姿态（已校准船头）
+        heading  = heading,
 
-        -- 物理属性
-        scale   = safe(ship.getScale),
-        inertia = safe(ship.getMomentOfInertiaTensor),
+        -- 其他（保留）
+        transform  = safe(ship.getTransformationMatrix),
+        scale      = safe(ship.getScale),
+        inertia    = safe(ship.getMomentOfInertiaTensor),
     }
 end
 
@@ -96,7 +114,7 @@ while true do
 
     term.clear()
     term.setCursorPos(1, 1)
-    print("=== SHIP PERCEPTION ===")
+    print("=== SHIP PERCEPTION (CALIBRATED) ===")
     print("ROLE:", state.role)
     print("ID:", state.id)
     print("Mass:", state.mass)
@@ -121,11 +139,13 @@ while true do
 
     if state.heading then
         print(string.format(
-            "Heading: %.2f %.2f %.2f",
+            "Heading(FWD): %.3f %.3f %.3f",
             state.heading.x,
             state.heading.y,
             state.heading.z
         ))
+    else
+        print("Heading: N/A")
     end
 
     sleep(0)
