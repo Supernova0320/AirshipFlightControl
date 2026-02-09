@@ -3,7 +3,7 @@
 -- ================================
 
 local MODEM_PORT = 65520
-local ROLE = "front"   -- ★ 这一台是 front，另一台改成 "rear"
+local ROLE = "sensor"
 
 -- modem（可选）
 local modem = peripheral.find("modem")
@@ -36,11 +36,44 @@ local function safe(fn)
     return nil
 end
 
+local function rotateVector(q, v)
+    local x = q.x
+    local y = q.y
+    local z = q.z
+    local w = q.w
+
+    local uvx = y * v.z - z * v.y
+    local uvy = z * v.x - x * v.z
+    local uvz = x * v.y - y * v.x
+
+    local uuvx = y * uvz - z * uvy
+    local uuvy = z * uvx - x * uvz
+    local uuvz = x * uvy - y * uvx
+
+    return {
+        x = v.x + 2 * (w * uvx + uuvx),
+        y = v.y + 2 * (w * uvy + uuvy),
+        z = v.z + 2 * (w * uvz + uuvz)
+    }
+end
+
 -- ================================
 -- 感知数据采集
 -- ================================
 
 local function collectShipState()
+    local quaternion = safe(ship.getQuaternion)
+    local heading = nil
+    if quaternion and quaternion.x and quaternion.y and quaternion.z and quaternion.w then
+        local forward = { x = -1, y = 0, z = 0 }
+        local rotated = rotateVector(quaternion, forward)
+        heading = {
+            x = rotated.x,
+            y = rotated.y,
+            z = rotated.z
+        }
+    end
+
     return {
         -- ★ 身份字段（关键）
         role = ROLE,
@@ -59,8 +92,9 @@ local function collectShipState()
         omega    = safe(ship.getAngularVelocity),
 
         -- 姿态
-        quaternion = safe(ship.getQuaternion),
+        quaternion = quaternion,
         transform  = safe(ship.getTransformationMatrix),
+        heading    = heading,
 
         -- 物理属性
         scale   = safe(ship.getScale),
@@ -101,6 +135,15 @@ while true do
             state.velocity.x,
             state.velocity.y,
             state.velocity.z
+        ))
+    end
+
+    if state.heading then
+        print(string.format(
+            "Heading: %.2f %.2f %.2f",
+            state.heading.x,
+            state.heading.y,
+            state.heading.z
         ))
     end
 
