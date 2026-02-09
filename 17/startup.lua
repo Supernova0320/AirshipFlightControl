@@ -1,5 +1,6 @@
 -- ================================
---  CC:VS Perception Layer
+--  CC:VS Perception Layer (CALIBRATED)
+--  Ship Forward = +X in Shipyard Space
 -- ================================
 
 local MODEM_PORT = 65520
@@ -77,7 +78,6 @@ local function collectShipState()
     return {
         -- ★ 身份字段（关键）
         role = ROLE,
-
         timestamp = os.clock(),
 
         -- 基本信息
@@ -86,7 +86,7 @@ local function collectShipState()
         mass     = safe(ship.getMass),
         isStatic = safe(ship.isStatic),
 
-        -- 位置与速度
+        -- 位置与速度（世界坐标）
         position = safe(ship.getWorldspacePosition),
         velocity = safe(ship.getVelocity),
         omega    = safe(ship.getAngularVelocity),
@@ -96,9 +96,10 @@ local function collectShipState()
         transform  = safe(ship.getTransformationMatrix),
         heading    = heading,
 
-        -- 物理属性
-        scale   = safe(ship.getScale),
-        inertia = safe(ship.getMomentOfInertiaTensor),
+        -- 其他（保留）
+        transform  = safe(ship.getTransformationMatrix),
+        scale      = safe(ship.getScale),
+        inertia    = safe(ship.getMomentOfInertiaTensor),
     }
 end
 
@@ -115,7 +116,7 @@ while true do
 
     term.clear()
     term.setCursorPos(1, 1)
-    print("=== SHIP PERCEPTION ===")
+    print("=== SHIP PERCEPTION (CALIBRATED) ===")
     print("ROLE:", state.role)
     print("ID:", state.id)
     print("Mass:", state.mass)
