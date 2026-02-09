@@ -59,37 +59,6 @@ local function rotateVector(q, v)
 end
 
 -- ================================
--- 船头方向解算（核心校准逻辑）
--- 船体局部坐标中：+X 为船头
--- ================================
-
-local function getCalibratedHeading()
-    if not ship.transformPositionToWorld then
-        return nil
-    end
-
-    -- 船体局部原点
-    local w0 = safe(function()
-        return ship.transformPositionToWorld(0, 0, 0)
-    end)
-
-    -- 船体局部 +X 方向（船头）
-    local wF = safe(function()
-        return ship.transformPositionToWorld(1, 0, 0)
-    end)
-
-    if not w0 or not wF then
-        return nil
-    end
-
-    return {
-        x = wF.x - w0.x,
-        y = wF.y - w0.y,
-        z = wF.z - w0.z
-    }
-end
-
--- ================================
 -- 感知数据采集
 -- ================================
 

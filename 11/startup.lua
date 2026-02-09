@@ -22,6 +22,16 @@ local target = nil
 local uiEngineLevel = nil
 local autoState = nil
 
+-- ---------- Debug ----------
+local lastDebug = 0
+local function debugLog(message)
+    local now = os.clock()
+    if now - lastDebug >= 1.5 then
+        print(string.format("[Main] %s", message))
+        lastDebug = now
+    end
+end
+
 -- ---------- Execution State ----------
 local execState = {
     mode   = "IDLE",
@@ -139,6 +149,13 @@ while true do
 
         sendAutoSensorUpdate()
         sendUIState()
+        debugLog(string.format(
+            "sensor pos=(%.1f,%.1f) heading=(%.2f,%.2f)",
+            sensor.pos.x or 0,
+            sensor.pos.z or 0,
+            (sensor.heading and sensor.heading.x) or 0,
+            (sensor.heading and sensor.heading.z) or 0
+        ))
 
     -- ===== UI Command =====
     elseif channel == UI_CHANNEL and msg.type == "ui_cmd" then
@@ -156,6 +173,11 @@ while true do
         end
 
         sendUIState()
+        debugLog(string.format(
+            "ui_cmd throttle=%s target=%s",
+            msg.throttle ~= nil and tostring(msg.throttle) or "-",
+            msg.target and string.format("(%.1f,%.1f)", msg.target.x or 0, msg.target.z or 0) or "-"
+        ))
 
     -- ===== AUTO Command =====
     elseif channel == AUTO_CHANNEL and msg.type == "auto_cmd" then
@@ -165,12 +187,23 @@ while true do
         if msg.brake  then applyBrake(msg.brake) end
 
         sendUIState()
+        debugLog(string.format(
+            "auto_cmd mode=%s yaw=%s engine=%s",
+            msg.mode or execState.mode,
+            msg.yaw or execState.yaw,
+            msg.engine and tostring(msg.engine) or "-"
+        ))
 
     -- ===== AUTO State =====
     elseif channel == AUTO_CHANNEL and msg.type == "auto_state" then
         autoState = msg
         if msg.nav_state then execState.mode = msg.nav_state end
         sendUIState()
+        debugLog(string.format(
+            "auto_state=%s dist=%s",
+            msg.nav_state or "-",
+            msg.distance and string.format("%.1f", msg.distance) or "-"
+        ))
     end
 
     ::continue::

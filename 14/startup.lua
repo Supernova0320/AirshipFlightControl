@@ -166,6 +166,18 @@ local navState = "NAV_IDLE"
 local steering = "stable"
 local distance = nil
 
+-- ---------- Debug ----------
+local lastDebug = 0
+local lastNavState = navState
+local lastSteering = steering
+local function debugLog(message)
+    local now = os.clock()
+    if now - lastDebug >= 1.5 then
+        print(string.format("[Auto] %s", message))
+        lastDebug = now
+    end
+end
+
 local CRUISE_ENGINE = 2
 local BRAKE_DIST    = 500
 local STOP_DIST     = 5
@@ -251,6 +263,7 @@ local function resetToIdle()
     distance = nil
     sendAutoCmd({ mode = navState, yaw = "stable", engine = 0, brake = nil })
     sendAutoState()
+    debugLog("reset to NAV_IDLE")
 end
 
 local function processNavigation()
@@ -313,6 +326,17 @@ local function processNavigation()
     end
 
     sendAutoState()
+
+    if navState ~= lastNavState or steering ~= lastSteering then
+        debugLog(string.format(
+            "state=%s steering=%s dist=%s",
+            navState,
+            steering,
+            distance and string.format("%.1f", distance) or "-"
+        ))
+        lastNavState = navState
+        lastSteering = steering
+    end
 end
 
 print("=================================")
