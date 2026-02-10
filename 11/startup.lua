@@ -2,6 +2,15 @@
 -- Airship Main Controller (DUMB EXECUTOR)
 -- =========================================
 
+-- ---------- Debug ----------
+local DEBUG = true
+local function dbg(tag, msg)
+    if DEBUG then
+        print(string.format("[MAIN][%s] %s", tag, msg))
+    end
+end
+
+-- ---------- Peripherals ----------
 local modem = peripheral.find("modem") or error("No modem")
 local ship  = peripheral.find("ship")
 
@@ -17,20 +26,9 @@ modem.open(AUTO_CHANNEL)
 
 -- ---------- Sensor Cache ----------
 local sensor = nil
-
 local target = nil
 local uiEngineLevel = nil
 local autoState = nil
-
--- ---------- Debug ----------
-local lastDebug = 0
-local function debugLog(message)
-    local now = os.clock()
-    if now - lastDebug >= 1.5 then
-        print(string.format("[Main] %s", message))
-        lastDebug = now
-    end
-end
 
 -- ---------- Execution State ----------
 local execState = {
@@ -106,7 +104,7 @@ local function sendAutoSensorUpdate()
         AUTO_CHANNEL,
         AUTO_CHANNEL,
         {
-            type  = "sensor_update",
+            type   = "sensor_update",
             sensor = sensor and {
                 pos = sensor.pos,
                 vel = sensor.vel,
@@ -128,36 +126,38 @@ local function sendAutoTarget()
     )
 end
 
-print("=================================")
-print("Main Controller ONLINE")
-print("Mode: DUMB EXECUTOR")
-print("=================================")
+dbg("BOOT", "Main Controller ONLINE")
+dbg("BOOT", "Mode=DUMB_EXECUTOR")
 
 -- ---------- Main Loop ----------
 while true do
     local _, _, channel, _, msg = os.pullEvent("modem_message")
     if type(msg) ~= "table" then goto continue end
 
-    -- ===== Perception (Front / Rear Sensors) =====
+    -- ===== PERCEPTION =====
     if channel == PERCEPTION_CHANNEL and msg.position then
         sensor = {
             pos = msg.position,
             vel = msg.velocity,
             heading = msg.heading,
-            t   = msg.timestamp
+            t = msg.timestamp
         }
 
         sendAutoSensorUpdate()
         sendUIState()
-        debugLog(string.format(
-            "sensor pos=(%.1f,%.1f) heading=(%.2f,%.2f)",
-            sensor.pos.x or 0,
-            sensor.pos.z or 0,
-            (sensor.heading and sensor.heading.x) or 0,
-            (sensor.heading and sensor.heading.z) or 0
-        ))
 
-    -- ===== UI Command =====
+        dbg(
+            "SENSOR",
+            string.format(
+                "pos=(%.1f,%.1f) heading=(%.2f,%.2f)",
+                sensor.pos.x or 0,
+                sensor.pos.z or 0,
+                (sensor.heading and sensor.heading.x) or 0,
+                (sensor.heading and sensor.heading.z) or 0
+            )
+        )
+
+    -- ===== UI COMMAND =====
     elseif channel == UI_CHANNEL and msg.type == "ui_cmd" then
         if msg.throttle ~= nil then
             uiEngineLevel = msg.throttle
@@ -173,13 +173,17 @@ while true do
         end
 
         sendUIState()
-        debugLog(string.format(
-            "ui_cmd throttle=%s target=%s",
-            msg.throttle ~= nil and tostring(msg.throttle) or "-",
-            msg.target and string.format("(%.1f,%.1f)", msg.target.x or 0, msg.target.z or 0) or "-"
-        ))
 
-    -- ===== AUTO Command =====
+        dbg(
+            "UI",
+            string.format(
+                "throttle=%s target=%s",
+                msg.throttle ~= nil and tostring(msg.throttle) or "-",
+                msg.target and string.format("(%.1f,%.1f)", msg.target.x or 0, msg.target.z or 0) or "-"
+            )
+        )
+
+    -- ===== AUTO COMMAND =====
     elseif channel == AUTO_CHANNEL and msg.type == "auto_cmd" then
         if msg.mode   then execState.mode = msg.mode end
         if msg.yaw    then setYaw(msg.yaw) end
@@ -187,23 +191,32 @@ while true do
         if msg.brake  then applyBrake(msg.brake) end
 
         sendUIState()
-        debugLog(string.format(
-            "auto_cmd mode=%s yaw=%s engine=%s",
-            msg.mode or execState.mode,
-            msg.yaw or execState.yaw,
-            msg.engine and tostring(msg.engine) or "-"
-        ))
 
-    -- ===== AUTO State =====
+        dbg(
+            "AUTO_CMD",
+            string.format(
+                "mode=%s yaw=%s engine=%s",
+                msg.mode or execState.mode,
+                msg.yaw or execState.yaw,
+                msg.engine and tostring(msg.engine) or "-"
+            )
+        )
+
+    -- ===== AUTO STATE =====
     elseif channel == AUTO_CHANNEL and msg.type == "auto_state" then
         autoState = msg
         if msg.nav_state then execState.mode = msg.nav_state end
+
         sendUIState()
-        debugLog(string.format(
-            "auto_state=%s dist=%s",
-            msg.nav_state or "-",
-            msg.distance and string.format("%.1f", msg.distance) or "-"
-        ))
+
+        dbg(
+            "AUTO_STATE",
+            string.format(
+                "state=%s dist=%s",
+                msg.nav_state or "-",
+                msg.distance and string.format("%.1f", msg.distance) or "-"
+            )
+        )
     end
 
     ::continue::

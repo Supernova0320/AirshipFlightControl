@@ -1,6 +1,5 @@
 -- ================================
 --  CC:VS Perception Layer (CALIBRATED)
---  Ship Forward = +X in Shipyard Space
 -- ================================
 
 local MODEM_PORT = 65520
@@ -37,43 +36,44 @@ local function safe(fn)
     return nil
 end
 
-local function rotateVector(q, v)
-    local x = q.x
-    local y = q.y
-    local z = q.z
-    local w = q.w
+-- ================================
+-- 船头方向解算（核心校准逻辑）
+-- 船体局部坐标中：-X 为船头
+-- ================================
 
-    local uvx = y * v.z - z * v.y
-    local uvy = z * v.x - x * v.z
-    local uvz = x * v.y - y * v.x
+local function getCalibratedHeading()
+    if not ship.transformPositionToWorld then
+        return nil
+    end
 
-    local uuvx = y * uvz - z * uvy
-    local uuvy = z * uvx - x * uvz
-    local uuvz = x * uvy - y * uvx
+    -- 船体局部原点
+    local w0 = safe(function()
+        return ship.transformPositionToWorld(0, 0, 0)
+    end)
+
+    -- 船体局部 -X 方向（你已确认这是船头）
+    local wF = safe(function()
+        return ship.transformPositionToWorld(-1, 0, 0)
+    end)
+
+    if not w0 or not wF then
+        return nil
+    end
 
     return {
-        x = v.x + 2 * (w * uvx + uuvx),
-        y = v.y + 2 * (w * uvy + uuvy),
-        z = v.z + 2 * (w * uvz + uuvz)
+        x = wF.x - w0.x,
+        y = wF.y - w0.y,
+        z = wF.z - w0.z
     }
 end
+
 
 -- ================================
 -- 感知数据采集
 -- ================================
 
 local function collectShipState()
-    local quaternion = safe(ship.getQuaternion)
-    local heading = nil
-    if quaternion and quaternion.x and quaternion.y and quaternion.z and quaternion.w then
-        local forward = { x = -1, y = 0, z = 0 }
-        local rotated = rotateVector(quaternion, forward)
-        heading = {
-            x = rotated.x,
-            y = rotated.y,
-            z = rotated.z
-        }
-    end
+    local heading = getCalibratedHeading()
 
     return {
         -- ★ 身份字段（关键）
@@ -91,12 +91,10 @@ local function collectShipState()
         velocity = safe(ship.getVelocity),
         omega    = safe(ship.getAngularVelocity),
 
-        -- 姿态
-        quaternion = quaternion,
-        transform  = safe(ship.getTransformationMatrix),
-        heading    = heading,
+        -- 姿态（已校准船头）
+        heading  = heading,
 
-        -- 其他（保留）
+        -- 其他（保留，方便以后扩展）
         transform  = safe(ship.getTransformationMatrix),
         scale      = safe(ship.getScale),
         inertia    = safe(ship.getMomentOfInertiaTensor),
@@ -141,11 +139,13 @@ while true do
 
     if state.heading then
         print(string.format(
-            "Heading: %.2f %.2f %.2f",
+            "Heading(FWD): %.3f %.3f %.3f",
             state.heading.x,
             state.heading.y,
             state.heading.z
         ))
+    else
+        print("Heading: N/A")
     end
 
     sleep(0)

@@ -3,6 +3,14 @@
 -- UI Optimized Version (2x2 Monitor)
 -- =====================================
 
+-- ---------- Debug ----------
+local DEBUG = true
+local function dbg(...)
+    if DEBUG then
+        print("[UI]", ...)
+    end
+end
+
 -- ---------- Peripherals ----------
 local monitor = peripheral.find("monitor") or error("No monitor attached", 0)
 local modem   = peripheral.find("modem")   or error("No modem attached", 0)
@@ -24,16 +32,13 @@ local BUTTON_MARGIN_Y = 1
 -- ---------- Palette ----------
 local C = {
     bg = colors.black,
-
     title = colors.cyan,
     label = colors.lightBlue,
     value = colors.white,
-
     engine_idle = colors.lightBlue,
     engine_active = colors.cyan,
     stop_idle = colors.gray,
     stop_active = colors.red,
-
     divider = colors.gray,
 }
 
@@ -100,6 +105,7 @@ end
 -- ---------- Messaging ----------
 local function sendUICommand(payload)
     payload.type = "ui_cmd"
+    dbg("TX", textutils.serialize(payload))
     modem.transmit(MAIN_CHANNEL, MAIN_CHANNEL, payload)
 end
 
@@ -125,7 +131,6 @@ local function drawUI()
     local rx = pw + 3
     local panelW = sw - rx - 1
 
-    -- ===== ENGINE =====
     monitor.setTextColor(C.title)
     monitor.setCursorPos(2, 1)
     monitor.write("ENGINE CONTROL")
@@ -134,22 +139,15 @@ local function drawUI()
     local startY = 4
     for i, btn in ipairs(buttons) do
         local y = startY + (i - 1) * (BUTTON_HEIGHT + BUTTON_MARGIN_Y)
-
         local bg
         if btn.level == currentLevel then
             bg = (btn.level == 0) and C.stop_active or C.engine_active
         else
             bg = (btn.level == 0) and C.stop_idle or C.engine_idle
         end
-
-        block(
-            2, y, pw - 3, BUTTON_HEIGHT,
-            bg, colors.black, btn.label
-        )
+        block(2, y, pw - 3, BUTTON_HEIGHT, bg, colors.black, btn.label)
     end
 
-    -- ===== NAVIGATION (UNBOUND TITLE) =====
-    monitor.setBackgroundColor(C.bg)
     monitor.setTextColor(C.title)
     monitor.setCursorPos(rx, 1)
     monitor.write("NAVIGATION")
@@ -158,12 +156,11 @@ local function drawUI()
     local y = 4
     local indent = 2
 
-    local function section(title)
+    local function section(t)
         monitor.setTextColor(C.title)
         monitor.setCursorPos(rx, y)
-        monitor.write(title)
-        y = y + 1
-        spacer(1)
+        monitor.write(t)
+        y = y + 2
     end
 
     local function longValue(label, value)
@@ -171,7 +168,6 @@ local function drawUI()
         monitor.setCursorPos(rx, y)
         monitor.write(label)
         y = y + 1
-
         monitor.setTextColor(C.value)
         monitor.setCursorPos(rx + indent, y)
         monitor.write(value)
@@ -188,78 +184,32 @@ local function drawUI()
         y = y + 1
     end
 
-    local function divider()
-        spacer(1)
-        hline(rx, y, panelW, C.divider)
-        y = y + 1
-        spacer(1)
-    end
-
-    -- ---- TARGET ----
     section("[ TARGET ]")
+    longValue("Target X:", currentTarget.x and string.format("%.3f", currentTarget.x) or "--")
+    longValue("Target Z:", currentTarget.z and string.format("%.3f", currentTarget.z) or "--")
 
-    longValue(
-        "Target X:",
-        currentTarget.x and string.format("%.3f", currentTarget.x) or "--"
-    )
-
-    longValue(
-        "Target Z:",
-        currentTarget.z and string.format("%.3f", currentTarget.z) or "--"
-    )
-
-    divider()
-
-    -- ---- STATE ----
     section("[ STATE ]")
+    stateLine("Mode:", navState.mode or "IDLE", colors.cyan)
+    stateLine("Yaw:", string.upper(navState.steering), colors.lightBlue)
 
-    local modeLabel = navState.mode or "IDLE"
-    local modeColor = modeLabel ~= "NAV_IDLE" and colors.cyan or colors.gray
-    stateLine("Mode:", modeLabel, modeColor)
-
-    local yawColor = {
-        left   = colors.orange,
-        right  = colors.yellow,
-        stable = colors.lightBlue
-    }
-
-    stateLine(
-        "Yaw:",
-        string.upper(navState.steering),
-        yawColor[navState.steering]
-    )
-
-    divider()
-
-    -- ---- METRICS ----
     section("[ METRICS ]")
-
     local d = distance()
-    longValue(
-        "Distance:",
-        d and string.format("%.3f", d) or "--"
-    )
+    longValue("Distance:", d and string.format("%.3f", d) or "--")
 end
 
 -- ---------- Listener ----------
+local lastSnapshot = ""
+
 local function navListener()
     while true do
         local _, _, _, _, msg = os.pullEvent("modem_message")
         if type(msg) == "table" and msg.type == "exec_state" then
-            if msg.engine ~= nil then
-                currentLevel = msg.engine
-            end
 
+            if msg.engine ~= nil then currentLevel = msg.engine end
             if msg.pos then
                 navState.x = msg.pos.x
                 navState.z = msg.pos.z
             end
-
-            if msg.target then
-                currentTarget.x = msg.target.x
-                currentTarget.z = msg.target.z
-            end
-
             if msg.auto then
                 navState.steering = msg.auto.steering or navState.steering
                 navState.mode = msg.auto.nav_state or navState.mode
@@ -271,6 +221,26 @@ local function navListener()
             end
 
             navState.active = currentTarget.x ~= nil and navState.x ~= nil
+
+            local snap = string.format(
+                "%s|%s|%s|%s",
+                tostring(navState.mode),
+                tostring(navState.steering),
+                tostring(navState.distance),
+                tostring(currentLevel)
+            )
+
+            if snap ~= lastSnapshot then
+                dbg(
+                    "RX",
+                    "mode=", navState.mode,
+                    "yaw=", navState.steering,
+                    "dist=", navState.distance,
+                    "throttle=", currentLevel
+                )
+                lastSnapshot = snap
+            end
+
             drawUI()
         end
     end
@@ -288,14 +258,15 @@ local function consoleLoop()
             if x and z then
                 currentTarget.x = tonumber(x)
                 currentTarget.z = tonumber(z)
+                dbg("CMD set target", currentTarget.x, currentTarget.z)
                 sendTarget(currentTarget.x, currentTarget.z)
                 drawUI()
             end
 
         elseif upper == "CLEAR TARGET" then
+            dbg("CMD clear target")
             currentTarget.x = nil
             currentTarget.z = nil
-            navState.active = false
             navState.distance = nil
             clearTarget()
             drawUI()
@@ -314,6 +285,7 @@ local function touchLoop()
             local by = 4 + (i - 1) * (BUTTON_HEIGHT + BUTTON_MARGIN_Y)
             if x >= 2 and x <= pw - 1 and y >= by and y <= by + BUTTON_HEIGHT - 1 then
                 currentLevel = btn.level
+                dbg("Touch throttle", btn.level)
                 sendThrottle(currentLevel)
                 drawUI()
             end
@@ -322,6 +294,7 @@ local function touchLoop()
 end
 
 -- ---------- Startup ----------
+dbg("Frontend start, channel", MAIN_CHANNEL)
 sendThrottle(0)
 drawUI()
 parallel.waitForAny(consoleLoop, navListener, touchLoop)
